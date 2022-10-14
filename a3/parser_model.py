@@ -7,11 +7,14 @@ Sahil Chopra <schopra8@stanford.edu>
 Haoshen Hong <haoshen@stanford.edu>
 """
 import argparse
+from ctypes import sizeof
+from select import select
 import numpy as np
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 
 class ParserModel(nn.Module):
     """ Feedforward neural network with an embedding layer and two hidden layers.
@@ -72,10 +75,18 @@ class ParserModel(nn.Module):
         ###     Dropout: https://pytorch.org/docs/stable/nn.html#dropout-layers
         ### 
         ### See the PDF for hints.
-
-
-
-
+        self.embed_to_hidden_weight = nn.Parameter(torch.empty(self.embed_size*n_features, hidden_size))
+        self.embed_to_hidden_bias = nn.Parameter(torch.empty(hidden_size))
+        nn.init.xavier_uniform_(self.embed_to_hidden_weight)
+        nn.init.uniform_(self.embed_to_hidden_bias)
+        
+        self.dropout = nn.Dropout(dropout_prob)
+        
+        self.hidden_to_logits_weight = nn.Parameter(torch.empty(hidden_size, n_classes))
+        self.hidden_to_logits_bias = nn.Parameter(torch.empty(n_classes))
+        nn.init.xavier_uniform_(self.hidden_to_logits_weight)
+        nn.init.uniform_(self.hidden_to_logits_bias)
+        
         ### END YOUR CODE
 
     def embedding_lookup(self, w):
@@ -106,9 +117,19 @@ class ParserModel(nn.Module):
         ###     Gather: https://pytorch.org/docs/stable/torch.html#torch.gather
         ###     View: https://pytorch.org/docs/stable/tensors.html#torch.Tensor.view
         ###     Flatten: https://pytorch.org/docs/stable/generated/torch.flatten.html
-
-
-
+        '''
+        x = torch.index_select(self.embeddings, 0, w.flatten()).reshape(w.shape[0], -1)
+        '''
+        x = torch.empty((w.shape[0], self.n_features*self.embed_size))
+        for num, feature_vector in enumerate(w):        #feature_vector : (n_features,)
+            feature_emb = torch.empty((self.n_features*self.embed_size)) #feature_emb : (n_features * embed_size)
+            count = 0
+            for i in feature_vector:
+                idx_to_emb = self.embeddings[i,:]
+                feature_emb[count:count+self.embed_size] = idx_to_emb
+                count += self.embed_size
+            x[num] = feature_emb
+        
         ### END YOUR CODE
         return x
 
@@ -143,7 +164,9 @@ class ParserModel(nn.Module):
         ### Please see the following docs for support:
         ###     Matrix product: https://pytorch.org/docs/stable/torch.html#torch.matmul
         ###     ReLU: https://pytorch.org/docs/stable/nn.html?highlight=relu#torch.nn.functional.relu
-
+        x = self.embedding_lookup(w)
+        hidden = F.relu(torch.mm(x,self.embed_to_hidden_weight)+self.embed_to_hidden_bias)
+        logits = torch.mm(hidden, self.hidden_to_logits_weight) + self.hidden_to_logits_bias
 
         ### END YOUR CODE
         return logits
